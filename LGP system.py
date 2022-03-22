@@ -20,6 +20,7 @@ indSize = 50
 splitPercent = 1
 arith = "0"
 
+fileName = ""
 # Define helper functions
 
 # Generate random program
@@ -54,9 +55,12 @@ def interpret(prog, x):
 def fitness(prog, dataset, fileCheck):
     total = 0
     for i, x in enumerate(dataset):
-        if fileCheck: total += (interpret(prog, i) - x) ** 2
+        if fileCheck: 
+            buffer = abs(interpret(prog, i) - x)
+            if buffer > x/10: buffer = buffer**2
+            total += buffer
         else: total += (interpret(prog, x) - eval(arith)) ** 2
-    total += len(prog)
+    total += len(prog)/5
     return total
 
 def mutate(prog):
@@ -108,10 +112,16 @@ def choose(population, fitnesses, sumFitness):
             chance -= fit
 
 def end(prog):
-    #for pop in population: printProg(pop)
     print("y=" + printProg(prog))
-    if fileCheck: print("Actual fitness: ", (fitness(prog, vals, fileCheck)))
-    else: print("Actual fitness: ", (fitness(prog, xVals, fileCheck)))
+    if fileCheck: print("Actual fitness: ", 1/(fitness(prog, vals, fileCheck)))
+    else: print("Actual fitness: ", 1/(fitness(prog, xVals, fileCheck)))
+    saveCheck = input("Save best individual? (Yes/No) ").lower()
+    if saveCheck in ["yes", "ye", "y"]:
+        save = open("./best/" + fileName + ".csv", "w")
+        for op in prog:
+            save.write(op[0] + ',' + str(op[1]) + '\n')
+        save.close()
+
 
     gen = [i for i in range(len(bestFits))]
     yVals = []
@@ -198,7 +208,7 @@ for i in range(0, len(args), 2):
     elif args[i] == "-m": mutChance = float(args[i+1])
     elif args[i] == "-c": crossChance = float(args[i+1])
     elif args[i] == "-f": buffer = args[i+1]
-    elif args[i] == "-e": equation = args[i+1]
+    elif args[i] == "-e": equation = "true"
     
 if buffer[-4:] == ".csv":
     f = open(os.path.join(os.path.dirname(__file__),buffer), "r")
@@ -207,20 +217,29 @@ if buffer[-4:] == ".csv":
             vals.append(float(f.readline().split(",")[1])) 
         except:
             break    
-    fileCheck = True   
+    fileCheck = True  
+    fileName = buffer[:-4]
 else: 
     arith = buffer
     fileCheck = False
 
 if equation != "":
-    compare(equation)
-    exit()
+    load = open("./best/" + buffer, "r")
+    equation = []
+    for op in load:
+        op = op.split(",")
+        if op[1][:-1] == 'x': equation.append((op[0], op[1][:-1]))
+        else: equation.append((op[0], float(op[1][:-1])))
+    
 
 population = []
 bestFits = []
 bestProgs = []
 tests = []
-for _ in range(popSize): population.append(randProg())
+if len(equation) > 0: 
+    for _ in range(popSize): population.append(mutate(equation))
+else: 
+    for _ in range(popSize): population.append(randProg())
     
 for i in range(genNum):
     fitnesses = []
@@ -247,7 +266,7 @@ for i in range(genNum):
     bestFits.append(bestFit)
     bestProgs.append(population[fitnesses.index(bestFit)])
     print("Best program: ", end = "")
-    print("y=", printProg(bestProgs[-1]))
+    print("y=" + printProg(bestProgs[-1]))
     newPop = []
     split = round(popSize * (splitPercent / 100))
     for _ in range(popSize - split):
