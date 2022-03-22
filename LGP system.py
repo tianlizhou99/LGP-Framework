@@ -115,7 +115,7 @@ def end(prog):
     print("y=" + printProg(prog))
     if fileCheck: print("Actual fitness: ", 1/(fitness(prog, vals, fileCheck)))
     else: print("Actual fitness: ", 1/(fitness(prog, xVals, fileCheck)))
-    saveCheck = input("Save best individual? (Yes/No) ").lower()
+    saveCheck = input("Save best individual? (Yes/No): ").lower()
     if saveCheck in ["yes", "ye", "y"]:
         save = open("./best/" + fileName + ".csv", "w")
         for op in prog:
@@ -195,8 +195,9 @@ print("""
     -s: Percent of population chosen for Elitism (Default: 1)
     -m: Mutation chance (Default: 11)
     -c: Crossover chance (Default: 11)
-    -f: csv file or function""")
-args = input("Raise flags (default: -g 100 -p 100 -s 1 -m 11 -c 11 -f test.csv): ").split()
+    -f: csv file or function
+    -e: Load existing model""")
+args = input("Raise flags (default: -g 100 -p 100 -s 1 -m 50 -c 1 -f test.csv): ").split()
 
 buffer = "test.csv"
 fileCheck = True
@@ -230,6 +231,7 @@ if equation != "":
         op = op.split(",")
         if op[1][:-1] == 'x': equation.append((op[0], op[1][:-1]))
         else: equation.append((op[0], float(op[1][:-1])))
+    load.close()
     
 
 population = []
