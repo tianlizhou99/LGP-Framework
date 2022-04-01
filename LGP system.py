@@ -1,28 +1,33 @@
-# Variable setup
-from math import sin, cos, exp, log
+# Library setup
+from math import sin, cos, exp, log, sqrt
 import numpy as np
 import os
 import random
 import matplotlib.pyplot as plt
 from datetime import datetime
+
+# Seeding for testing purposes
 #random.seed(891001)
 
-#Koza Tableau
+# Koza Tableau
 operators = ['+', '-', '*', '/', "sin", "cos"]
 numRange = 10000
 xVals = [i/1000 for i in range(-6284, 6284)]
 vals = []
 mutChance = 20
-crossChance = 1
+crossChance = 50
 popSize = 200
 genNum = 100
 indSize = 50
 splitPercent = 5
 arith = "0"
 
+# Miscellaneous variables
 fileName = ""
+
 # Define helper functions
 
+# Choose a random value or 'x'
 def randValue():
     if random.choice([True, False]): return 'x'
     else: return random.uniform(0, numRange)
@@ -30,59 +35,62 @@ def randValue():
 # Generate random program
 def randProg():
     program = []
-    for _ in range(random.randrange(1, indSize)):
+    for _ in range(random.randrange(1, indSize)): # Guarantee at least one instruction per individual
         op = random.choice(operators)
-        if op == '/': program.append((op, randValue()))
-        else: program.append((op, randValue()))
+        program.append((op, randValue()))
     return program
 
+# Evaluate x against an individual
 def interpret(prog, x):
     total = 0
     for node in prog:
-        if node[0] not in ['+', '-', '*', '/']:
+        if node[0] not in ['+', '-', '*', '/']: # Handle operators that ignore operands
             if node[0] == "sin": total = sin(total)
             elif node[0] == "cos": total = cos(total)
-            elif node[0] == "e": 
+            elif node[0] == "e": # Protection against int overflow
                 if total < 16: total = exp(total)
                 else: total = exp(16)
-            elif node[0] == "log": 
+            elif node[0] == "log": # Protection against -INF
                 if total > 0: total = log(total)
         elif node[1] == 'x':
             if node[0] == '+': total += x
             elif node[0] == '-': total -= x
             elif node[0] == '*': total *= x
-            elif node[0] == '/':
+            elif node[0] == '/': # Protection against INF
                 if x != 0: total /= x
         else:
             if node[0] == '+': total += node[1]
             elif node[0] == '-': total -= node[1]
             elif node[0] == '*': total *= node[1]
-            elif node[0] == '/':
+            elif node[0] == '/': # Protection against INF
                 if node[1] != 0: total /= node[1]
     return total
 
+# Fitness function
 def fitness(prog, dataset, fileCheck):
     total = 0
     for i, x in enumerate(dataset):
+        # Current fitness function is based on Root Mean Squared Error (RMSE)
         if fileCheck: total += (interpret(prog, i) - x)**2
         else: total += (interpret(prog, x) - eval(arith)) ** 2
     total += len(prog)
     
     xCount = 0
     for op in prog:
-        if op[1] == 'x': xCount += 1
+        if op[0] not in ['+', '-', '*', '/'] and op[1] == 'x': xCount += 1
     if xCount == 0: total += 1000000
-    else: total += 1/xCount
-    if total < 0: total = 1000000
+    else: total += 1/xCount # Minor bias towards functions that utilize more X's
     
+    total = sqrt(total/indSize)
     return total
 
+# Mutate individual
 def mutate(prog):
     newProg = prog.copy()
     i = 0
     while i < len(newProg):
-        if random.randint(0, 100) < mutChance:
-            rand = random.randint(1, 3)
+        if random.randint(0, 100) < mutChance: # Uniform mutation dependent on dynamic mutation chance
+            rand = random.randint(1, 3) # Equal opportunity for addition, deletion, or mutation
             if rand == 1:
                 if len(newProg) >= indSize: continue
                 op = random.choice(operators)
@@ -101,6 +109,7 @@ def mutate(prog):
             i += 1
     return newProg
 
+# One-point crossover operator that returns two children
 def xover(prog1, prog2):
     newProg1 = prog1.copy()
     newProg2 = prog2.copy()
@@ -110,6 +119,7 @@ def xover(prog1, prog2):
         newProg2 = newProg2[:i] + prog1[i:]
     return newProg1, newProg2
 
+# Interpret individuals into human readable formulas
 def printProg(prog):
     output = "0"
     for node in prog:
@@ -119,6 +129,7 @@ def printProg(prog):
             output = '(' + output + str(node[0]) + str(node[1]) + ')'
     return output
 
+# Choose individual from population with chance proportional to fitness value
 def choose(population, fitnesses, sumFitness):
     chance = random.uniform(0, sumFitness)
     for i in range(len(population)):
@@ -128,6 +139,7 @@ def choose(population, fitnesses, sumFitness):
         else:
             chance -= fit
 
+# Terminate program
 def end(prog):
     print("y=" + printProg(prog))
     if fileCheck: print("Actual fitness: ", (fitness(prog, vals, fileCheck)))
@@ -187,6 +199,7 @@ def end(prog):
     plt.legend(loc='best')
     plt.show()
     
+    # Save individual as csv file to be loaded in the future
     saveCheck = input("Save best individual? (Yes/No): ").lower()
     if saveCheck in ["yes", "ye", "y"]:
         save = open("./best/" + fileName + ".csv", "w")
@@ -225,6 +238,7 @@ print("""
     -e: Load existing model""")
 args = input("Raise flags (default: -g 100 -p 200 -s 5 -m 20 -c 50 -f test.csv): ").split()
 
+# Check for raised flags
 buffer = "test.csv"
 fileCheck = True
 equation = ""
@@ -238,6 +252,7 @@ for i in range(0, len(args)):
     elif args[i] == "-e": equation = "true"
 minMutChance = mutChance
 
+# Read data
 if buffer[-4:] == ".csv":
     f = open(os.path.join(os.path.dirname(__file__),buffer), "r")
     while f.readline():
@@ -249,11 +264,12 @@ if buffer[-4:] == ".csv":
             break    
     fileCheck = True  
     fileName = buffer[:-4]
-    numRange = vals[0]
+    numRange = vals[0] # Scale available values to the initial value of dataset
 else: 
     arith = buffer
     fileCheck = False
 
+# Load existing individual
 if equation != "":
     load = open("./best/" + buffer, "r")
     equation = []
@@ -269,15 +285,19 @@ bestFits = []
 averageFits = []
 bestProgs = []
 tests = []
+
+# Populate initial generation
 if len(equation) > 0: 
+    # Delta of loaded individual
     for _ in range(popSize): population.append(mutate(equation))
 else: 
+    # Random individuals
     for _ in range(popSize): population.append(randProg())
 
 prevFit = 0
 for i in range(genNum):
     fitnesses = []
-    if fileCheck: tests = vals[:len(vals) * 4//5]
+    if fileCheck: tests = vals[:len(vals) * 4//5] # Reserve 80% of dataset as training data
     else: tests = random.choices(xVals, k=1000)
     print("Generation", i + 1, ":", end=" ")
     sumFitness, bestFit, bestFitIndex, minFit = 0, -1000000, 0, 1000000
@@ -313,7 +333,7 @@ for i in range(genNum):
     newProg1, newProg2 = [], []
     count = 0
     while count < popSize - split:
-        if random.choice([True, False]):
+        if random.choice([True, False]): # Equal chance between reproduction or delta
             newProg1, newProg2 = xover(choose(population, fitnesses, sumFitness), choose(population, fitnesses, sumFitness))
             newProg1 = mutate(newProg1)
             newProg2 = mutate(newProg2)
@@ -324,6 +344,6 @@ for i in range(genNum):
             newProg1 = mutate(choose(population, fitnesses, sumFitness))
             newPop.append(newProg1)
             count += 1
-    for _ in range(split): newPop.append(bestProgs[-1])
+    for _ in range(split): newPop.append(bestProgs[-1]) # Elitism
     population = newPop
 end(bestProgs[-1])
