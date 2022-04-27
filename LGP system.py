@@ -5,9 +5,10 @@ import os
 import random
 import matplotlib.pyplot as plt
 from datetime import datetime
+from heapq import heapify, heappop, heappush
 
 # Seeding for testing purposes
-#random.seed(891001)
+# random.seed(891001)
 
 # Koza Tableau
 operators = ['+', '-', '*', '/', "sin", "cos"]
@@ -38,12 +39,13 @@ def randProg():
     for _ in range(random.randrange(1, indSize)): # Guarantee at least one instruction per individual
         op = random.choice(operators)
         program.append((op, randValue()))
+    program = (random.uniform(0, numRange), program)
     return program
 
 # Evaluate x against an individual
 def interpret(prog, x):
-    total = 0
-    for node in prog:
+    total = prog[0]
+    for node in prog[1]:
         if node[0] not in ['+', '-', '*', '/']: # Handle operators that ignore operands
             if node[0] == "sin": total = sin(total)
             elif node[0] == "cos": total = cos(total)
@@ -71,23 +73,26 @@ def fitness(prog, dataset, fileCheck):
     total = 0
     for i, x in enumerate(dataset):
         # Current fitness function is based on Root Mean Squared Error (RMSE)
-        if fileCheck: total += (interpret(prog, i) - x)**2
+        if fileCheck: 
+            buffer = interpret(prog, i)
+            if buffer < 0: total += 1000000 
+            else: total += (buffer - x)**2
         else: total += (interpret(prog, x) - eval(arith)) ** 2
-    total += len(prog)
+    # total += len(prog)/numRange
     
     xCount = 0
-    for op in prog:
-        if op[0] not in ['+', '-', '*', '/'] and op[1] == 'x': xCount += 1
+    for op in prog[1]:
+        if op[0] in ['+', '-', '*', '/'] and op[1] == 'x': xCount += 1
     if xCount == 0: total += 1000000
-    else: total += 1/xCount # Minor bias towards functions that utilize more X's
+    # else: total += 1/xCount # Minor bias towards functions that utilize more X's
     
-    total = sqrt(total/indSize)
-    return total
+    return round(sqrt(total/indSize), 6)
 
 # Mutate individual
 def mutate(prog):
-    newProg = prog.copy()
-    i = 0
+    newProg = prog[1].copy()
+    i, num = 0, prog[0]
+    if random.randint(0, 100) < mutChance: num = random.uniform(0, numRange)
     while i < len(newProg):
         if random.randint(0, 100) < mutChance: # Uniform mutation dependent on dynamic mutation chance
             rand = random.randint(1, 3) # Equal opportunity for addition, deletion, or mutation
@@ -107,22 +112,22 @@ def mutate(prog):
                 newProg.pop(i)
         else:
             i += 1
-    return newProg
+    return (num, newProg)
 
 # One-point crossover operator that returns two children
 def xover(prog1, prog2):
-    newProg1 = prog1.copy()
-    newProg2 = prog2.copy()
+    newProg1 = prog1[1].copy()
+    newProg2 = prog2[1].copy()
     if random.randint(0, 100) < crossChance:
         i = random.randint(1, min(len(prog1), len(prog2)))
-        newProg1 = newProg1[:i] + prog2[i:]
-        newProg2 = newProg2[:i] + prog1[i:]
-    return newProg1, newProg2
+        newProg1 = newProg1[:i] + prog2[1][i:]
+        newProg2 = newProg2[:i] + prog1[1][i:]
+    return (prog1[0], newProg1), (prog2[0], newProg2)
 
 # Interpret individuals into human readable formulas
 def printProg(prog):
-    output = "0"
-    for node in prog:
+    output = str(prog[0])
+    for node in prog[1]:
         if node[0] not in ['+', '-', '*', '/']:
             output = str(node[0]) + '(' + output +')'
         else:
@@ -131,13 +136,7 @@ def printProg(prog):
 
 # Choose individual from population with chance proportional to fitness value
 def choose(population, fitnesses, sumFitness):
-    chance = random.uniform(0, sumFitness)
-    for i in range(len(population)):
-        fit = fitnesses[i]
-        if chance < fit:
-            return population[i]
-        else:
-            chance -= fit
+    return random.choices(population, weights=reversed(fitnesses), k = 1)[0]
 
 # Terminate program
 def end(prog):
@@ -203,7 +202,7 @@ def end(prog):
     saveCheck = input("Save best individual? (Yes/No): ").lower()
     if saveCheck in ["yes", "ye", "y"]:
         save = open("./best/" + fileName + ".csv", "w")
-        for op in prog:
+        for op in prog[1]:
             save.write(op[0] + ',' + str(op[1]) + '\n')
         save.close()
     
@@ -239,7 +238,7 @@ print("""
 args = input("Raise flags (default: -g 100 -p 200 -s 5 -m 20 -c 50 -f test.csv): ").split()
 
 # Check for raised flags
-buffer = "test.csv"
+buffer = "B07SKM3RX9.csv"
 fileCheck = True
 equation = ""
 for i in range(0, len(args)):
@@ -251,7 +250,7 @@ for i in range(0, len(args)):
     elif args[i] == "-f": buffer = args[i+1]
     elif args[i] == "-e": equation = "true"
 minMutChance = mutChance
-
+split = round(popSize * (splitPercent / 100))
 # Read data
 if buffer[-4:] == ".csv":
     f = open(os.path.join(os.path.dirname(__file__),buffer), "r")
@@ -284,7 +283,11 @@ population = []
 bestFits = []
 averageFits = []
 bestProgs = []
+heapify(bestProgs)
 tests = []
+goats = []
+goat = []
+goatFit = 10000000
 
 # Populate initial generation
 if len(equation) > 0: 
@@ -297,13 +300,13 @@ else:
 prevFit = 0
 for i in range(genNum):
     fitnesses = []
-    if fileCheck: tests = vals[:len(vals) * 4//5] # Reserve 80% of dataset as training data
+    if fileCheck: tests = vals #[:len(vals) * 4//5] # Reserve 80% of dataset as training data
     else: tests = random.choices(xVals, k=1000)
     print("Generation", i + 1, ":", end=" ")
-    sumFitness, bestFit, bestFitIndex, minFit = 0, -1000000, 0, 1000000
-    for prog in population:
+    sumFitness, bestFit, minFit = 0, 1000000, 1000000
+    for index, prog in enumerate(population):
         fit = fitness(prog, tests, fileCheck)
-        if fit == 0:
+        if fit == 0 or mutChance > 90:
             if fileCheck: 
                 if fitness(prog, vals, fileCheck) == 0:
                     print("Perfect solution found: ", end="")
@@ -314,9 +317,22 @@ for i in range(genNum):
                     print("Perfect solution found: ", end="")
                     end(prog)
                 else: fit = 1
-        fitnesses.append((1 / fit))
+        
+        # Reserving best programs for elitism
+        if split > 0:
+            if len(bestProgs) > split:
+                temp = bestProgs[0]
+                if -temp[0] > fit: 
+                    heappush(bestProgs, (-fit, index))
+                    heappop(bestProgs)
+            else: heappush(bestProgs, (-fit, index))
+        
+        fitnesses.append(fit)
         sumFitness += fitnesses[-1]
-        bestFit = max(bestFit, fitnesses[-1])
+        bestFit = min(bestFit, fitnesses[-1])
+        if bestFit < goatFit:
+            goatFit = bestFit
+            goat = prog
     averageFits.append(sumFitness/popSize)
     print("Best fitness:", bestFit, end=", ")
     print("Average fitness:", averageFits[-1], end=", ")
@@ -325,11 +341,10 @@ for i in range(genNum):
     elif mutChance > minMutChance: mutChance -= 1
     prevFit = bestFit
     bestFits.append(bestFit)
-    bestProgs.append(population[bestFitIndex])
+    goats.append(goat)
     print("Best program: ", end = "")
-    print("y=" + printProg(bestProgs[-1]))
+    print("y=" + printProg(goats[-1]))
     newPop = []
-    split = round(popSize * (splitPercent / 100))
     newProg1, newProg2 = [], []
     count = 0
     while count < popSize - split:
@@ -344,6 +359,7 @@ for i in range(genNum):
             newProg1 = mutate(choose(population, fitnesses, sumFitness))
             newPop.append(newProg1)
             count += 1
-    for _ in range(split): newPop.append(bestProgs[-1]) # Elitism
+    for _ in range(split): 
+        newPop.append(population[heappop(bestProgs)[1]]) # Elitism
     population = newPop
-end(bestProgs[-1])
+end(goat)
