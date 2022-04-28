@@ -14,14 +14,15 @@ from heapq import heapify, heappop, heappush
 operators = ['+', '-', '*', '/', "sin", "cos"]
 numRange = 10000
 xVals = [i/1000 for i in range(-6284, 6284)]
-vals = []
+vals, vals2 = [], []
 mutChance = 20
 crossChance = 50
 popSize = 200
 genNum = 100
-indSize = 50
+indSize = 100
 splitPercent = 5
 arith = "0"
+tourSize = 5
 
 # Miscellaneous variables
 fileName = ""
@@ -43,7 +44,7 @@ def randProg():
     return program
 
 # Evaluate x against an individual
-def interpret(prog, x):
+def interpret(prog, x, setNum):
     total = prog[0]
     for node in prog[1]:
         if node[0] not in ['+', '-', '*', '/']: # Handle operators that ignore operands
@@ -66,27 +67,47 @@ def interpret(prog, x):
             elif node[0] == '*': total *= node[1]
             elif node[0] == '/': # Protection against INF
                 if node[1] != 0: total /= node[1]
+    if setNum == 0: total += norm1
+    else: total += norm2
     return total
 
 # Fitness function
-def fitness(prog, dataset, fileCheck):
+def fitness(prog, dataset, fileCheck, dataset2 = []):
     total = 0
     for i, x in enumerate(dataset):
         # Current fitness function is based on Root Mean Squared Error (RMSE)
         if fileCheck: 
-            buffer = interpret(prog, i)
+            buffer = interpret(prog, i, 0)
             if buffer < 0: total += 1000000 
             else: total += (buffer - x)**2
-        else: total += (interpret(prog, x) - eval(arith)) ** 2
-    # total += len(prog)/numRange
+        else: total += (interpret(prog, x, 0) - eval(arith)) ** 2
+    total += len(prog)
     
     xCount = 0
     for op in prog[1]:
         if op[0] in ['+', '-', '*', '/'] and op[1] == 'x': xCount += 1
     if xCount == 0: total += 1000000
-    # else: total += 1/xCount # Minor bias towards functions that utilize more X's
+    else: total += 1/xCount # Minor bias towards functions that utilize more X's
+    total = round(sqrt(total/indSize), 6)
     
-    return round(sqrt(total/indSize), 6)
+    if multi:
+        total2 = 0
+        for i, x in enumerate(dataset2):
+            buffer = interpret(prog, i, 1)
+            if buffer < 0: total += 1000000 
+            else: total2 += (buffer - x)**2
+        total2 += len(prog)
+        
+        xCount = 0
+        for op in prog[1]:
+            if op[0] in ['+', '-', '*', '/'] and op[1] == 'x': xCount += 1
+        if xCount == 0: total += 1000000
+        else: total2 += 1/xCount # Minor bias towards functions that utilize more X's
+        total2 = round(sqrt(total/indSize), 6)
+        
+        total = min(total, total2)
+    
+    return total
 
 # Mutate individual
 def mutate(prog):
@@ -112,7 +133,7 @@ def mutate(prog):
                 newProg.pop(i)
         else:
             i += 1
-    return (num, newProg)
+    return (prog[0], newProg)
 
 # One-point crossover operator that returns two children
 def xover(prog1, prog2):
@@ -136,32 +157,46 @@ def printProg(prog):
 
 # Choose individual from population with chance proportional to fitness value
 def choose(population, fitnesses, sumFitness):
-    return random.choices(population, weights=reversed(fitnesses), k = 1)[0]
+    tournament = random.sample([i for i in range(len(population))], tourSize)
+    contPop = []
+    contFit = []
+    for contest in tournament:
+        contPop.append(population[contest])
+        contFit.append(fitnesses[contest])
+    return random.choices(contPop, weights=reversed(contFit), k = 1)[0]
 
 # Terminate program
 def end(prog):
     print("y=" + printProg(prog))
-    if fileCheck: print("Actual fitness: ", (fitness(prog, vals, fileCheck)))
+    if fileCheck: 
+        if multi: print("Actual fitness: ", (fitness(prog, vals, fileCheck, vals2)))
+        else: print("Actual fitness: ", (fitness(prog, vals, fileCheck)))
     else: print("Actual fitness: ", (fitness(prog, xVals, fileCheck)))
 
     gen = [i for i in range(len(bestFits))]
-    yVals = []
+    yVals, yVals2 = [], []
     zVals = []
     if fileCheck:
         minInd, minVal = 0, 10000000000
-        for x in range(len(vals)):
+        for x in range(len(vals) + 180):
             try:
-                value = interpret(prog, x)
+                value = interpret(prog, x, 0)
                 if value < minVal: 
                     minVal = value
                     minInd = x
                 yVals.append(value)
             except:
                 yVals.append(0)
+            if multi:
+                try:
+                    value = interpret(prog, x, 1)
+                    yVals2.append(value)
+                except:
+                    yVals2.append(0)
     else:
         for x in xVals:
             try:
-                yVals.append(interpret(prog, x))
+                yVals.append(interpret(prog, x, 0))
             except:
                 yVals.append(0)
             try:
@@ -171,11 +206,11 @@ def end(prog):
     #for i in range(len(bestFits)): bestFits[i] = 100 / bestFits[i]
     plt.rcParams["figure.figsize"] = [7.50, 3.50]
     plt.rcParams["figure.autolayout"] = True
-    plt.plot(gen, bestFits, color="red", label="Best fitness")
-    plt.plot(gen, averageFits, color="blue", label="Average fitness")
-    plt.title("Best fitness over time")
+    plt.plot(gen, bestFits, color="red", label="RMSE")
+    #plt.plot(gen, averageFits, color="blue", label="Average fitness")
+    plt.title("Least RMSE over time")
     plt.xlabel("Generation number")
-    plt.ylabel("Fitness")
+    plt.ylabel("RMSE")
     plt.legend(loc='best')
     plt.show()
     plt.clf()
@@ -186,7 +221,9 @@ def end(prog):
     plt.ylabel("Value ($)")
     if fileCheck: 
         plt.plot(range(len(vals)), vals, color="blue", alpha=0.5, label="Dataset")
-        plt.plot(range(len(vals)), yVals, color="red", alpha=0.5, label="Best program")
+        if multi: plt.plot(range(len(vals)), vals2, color="green", alpha=0.5, label="Dataset 2")
+        plt.plot(range(len(vals) + 180), yVals, color="red", alpha=0.5, label="Best program")
+        if multi: plt.plot(range(len(vals) + 180), yVals2, color="red", alpha=0.5, label="Best program norm adjusted")
         
         #res = datetime.strptime(str(minInd + 83), "%j").strftime("%m-%d")
         plt.annotate(minInd, xy=(minInd, yVals[minInd]), xytext=(minInd, yVals[minInd] * 1.1), arrowprops=dict(facecolor='black', shrink=0.05), horizontalalignment='right', verticalalignment='top')
@@ -238,8 +275,10 @@ print("""
 args = input("Raise flags (default: -g 100 -p 200 -s 5 -m 20 -c 50 -f test.csv): ").split()
 
 # Check for raised flags
-buffer = "B07SKM3RX9.csv"
+buffer = "gold.csv"
 fileCheck = True
+multi = False
+norm1, norm2 = 0, 0
 equation = ""
 for i in range(0, len(args)):
     if args[i] == "-g": genNum = int(args[i+1])
@@ -254,16 +293,21 @@ split = round(popSize * (splitPercent / 100))
 # Read data
 if buffer[-4:] == ".csv":
     f = open(os.path.join(os.path.dirname(__file__),buffer), "r")
-    while f.readline():
-        try:
-            time, value = f.readline().split(",")
-            value = float(value)
-            vals.append(value) 
-        except:
-            break    
+    check = f.readline().split(",")
+    if len(check) == 3: multi = True
+    while f:
+        data = f.readline().split(",")
+        if len(data) < 2: break
+        value = float(data[1])
+        vals.append(value)
+        if multi: 
+            value = float(data[2])
+            vals2.append(value)
     fileCheck = True  
     fileName = buffer[:-4]
     numRange = vals[0] # Scale available values to the initial value of dataset
+    norm1 = numRange
+    if multi: norm2 = vals2[0]
 else: 
     arith = buffer
     fileCheck = False
@@ -277,14 +321,14 @@ if equation != "":
         if op[1][:-1] == 'x': equation.append((op[0], op[1][:-1]))
         else: equation.append((op[0], float(op[1][:-1])))
     load.close()
+    equation = (norm1, equation)
     
-
 population = []
 bestFits = []
 averageFits = []
 bestProgs = []
 heapify(bestProgs)
-tests = []
+tests, tests2 = [], []
 goats = []
 goat = []
 goatFit = 10000000
@@ -300,12 +344,15 @@ else:
 prevFit = 0
 for i in range(genNum):
     fitnesses = []
-    if fileCheck: tests = vals #[:len(vals) * 4//5] # Reserve 80% of dataset as training data
+    if fileCheck: 
+        tests = vals[:(len(vals) * 9)//10] # Reserve 90% of dataset as training data\
+        if multi:
+            tests2 = vals2[:(len(vals) * 9)//10]
     else: tests = random.choices(xVals, k=1000)
     print("Generation", i + 1, ":", end=" ")
     sumFitness, bestFit, minFit = 0, 1000000, 1000000
     for index, prog in enumerate(population):
-        fit = fitness(prog, tests, fileCheck)
+        fit = fitness(prog, tests, fileCheck, tests2)
         if fit == 0 or mutChance > 90:
             if fileCheck: 
                 if fitness(prog, vals, fileCheck) == 0:
@@ -338,7 +385,7 @@ for i in range(genNum):
     print("Average fitness:", averageFits[-1], end=", ")
     print("Mutation chance:", str(mutChance) + "%")
     if prevFit == bestFit and mutChance < 100: mutChance += 1
-    elif mutChance > minMutChance: mutChance -= 1
+    else: mutChance = minMutChance
     prevFit = bestFit
     bestFits.append(bestFit)
     goats.append(goat)
@@ -360,6 +407,9 @@ for i in range(genNum):
             newPop.append(newProg1)
             count += 1
     for _ in range(split): 
-        newPop.append(population[heappop(bestProgs)[1]]) # Elitism
+        try:
+            newPop.append(population[heappop(bestProgs)[1]]) # Elitism
+        except:
+            newPop.append(newPop[-1])
     population = newPop
 end(goat)
