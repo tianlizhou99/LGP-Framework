@@ -1,5 +1,5 @@
 # Library setup
-from math import sin, cos, exp, log, sqrt
+from math import sin, cos, exp, log, sqrt, tan
 import numpy as np
 import os
 import random
@@ -11,7 +11,7 @@ from heapq import heapify, heappop, heappush
 # random.seed(891001)
 
 # Koza Tableau
-operators = ['+', '-', '*', '/', "sin", "cos"]
+operators = ['+', '-', '*', '/', "sin", "cos", "tan", "e", "log"]
 numRange = 10000
 xVals = [i/1000 for i in range(-6284, 6284)]
 vals, vals2 = [], []
@@ -22,7 +22,7 @@ genNum = 100
 indSize = 100
 splitPercent = 5
 arith = "0"
-tourSize = 5
+tourSize = 2
 
 # Miscellaneous variables
 fileName = ""
@@ -39,8 +39,8 @@ def randProg():
     program = []
     for _ in range(random.randrange(1, indSize)): # Guarantee at least one instruction per individual
         op = random.choice(operators)
-        program.append((op, randValue()))
-    program = (random.uniform(0, numRange), program)
+        program.append([op, randValue()])
+    program = [random.uniform(0, numRange), program]
     return program
 
 # Evaluate x against an individual
@@ -50,6 +50,7 @@ def interpret(prog, x, setNum):
         if node[0] not in ['+', '-', '*', '/']: # Handle operators that ignore operands
             if node[0] == "sin": total = sin(total)
             elif node[0] == "cos": total = cos(total)
+            elif node[0] == "tan": total = tan(total)
             elif node[0] == "e": # Protection against int overflow
                 if total < 16: total = exp(total)
                 else: total = exp(16)
@@ -112,28 +113,28 @@ def fitness(prog, dataset, fileCheck, dataset2 = []):
 # Mutate individual
 def mutate(prog):
     newProg = prog[1].copy()
-    i, num = 0, prog[0]
-    if random.randint(0, 100) < mutChance: num = random.uniform(0, numRange)
+    i = 0
+    if random.randint(0, 100) < mutChance: prog[0] = random.uniform(0, numRange)
     while i < len(newProg):
         if random.randint(0, 100) < mutChance: # Uniform mutation dependent on dynamic mutation chance
             rand = random.randint(1, 3) # Equal opportunity for addition, deletion, or mutation
             if rand == 1:
                 if len(newProg) >= indSize: continue
                 op = random.choice(operators)
-                if op == '/': newProg.insert(i, (op, randValue()))
-                else: newProg.insert(i, (op, randValue()))
+                if op == '/': newProg.insert(i, [op, randValue()])
+                else: newProg.insert(i, [op, randValue()])
                 i += 2
             elif rand == 2:
                 op = random.choice(operators)
-                if op == '/': newProg[i] = (op, randValue())
-                else: newProg[i] = (op, randValue())
+                if op == '/': newProg[i] = [op, randValue()]
+                else: newProg[i] = [op, randValue()]
                 i += 1
             elif rand == 3:
                 if len(newProg) == 1: continue
                 newProg.pop(i)
         else:
             i += 1
-    return (prog[0], newProg)
+    return [prog[0], newProg]
 
 # One-point crossover operator that returns two children
 def xover(prog1, prog2):
@@ -143,7 +144,7 @@ def xover(prog1, prog2):
         i = random.randint(1, min(len(prog1), len(prog2)))
         newProg1 = newProg1[:i] + prog2[1][i:]
         newProg2 = newProg2[:i] + prog1[1][i:]
-    return (prog1[0], newProg1), (prog2[0], newProg2)
+    return [prog1[0], newProg1], [prog2[0], newProg2]
 
 # Interpret individuals into human readable formulas
 def printProg(prog):
@@ -165,13 +166,46 @@ def choose(population, fitnesses, sumFitness):
         contFit.append(fitnesses[contest])
     return random.choices(contPop, weights=reversed(contFit), k = 1)[0]
 
+# Eliminate adjacent operations to improve runtime
+def checkAdjacent(prog):
+    index = 0
+    while index < len(prog[1]) - 1:
+        if prog[1][index][0] == "+" and prog[1][index + 1][0] == "+" or prog[1][index][0] == "-" and prog[1][index + 1][0] == "-": 
+            if prog[1][index][1] != "x" and prog[1][index + 1][1] != "x":
+                prog[1][index][1] += prog[1][index + 1][1]
+                prog[1].pop(index)
+            else: index += 1
+        elif prog[1][index][0] == "+" and prog[1][index + 1][0] == "-" or prog[1][index][0] == "-" and prog[1][index + 1][0] == "+":
+            if prog[1][index][1] != "x" and prog[1][index + 1][1] != "x":
+                prog[1][index][1] -= prog[1][index + 1][1]
+                prog[1].pop(index)
+            else: index += 1
+        elif prog[1][index][0] == "*" and prog[1][index + 1][0] == "*" or prog[1][index][0] == "/" and prog[1][index + 1][0] == "/":
+            if prog[1][index][1] != "x" and prog[1][index + 1][1] != "x":
+                prog[1][index][1] *= prog[1][index + 1][1]
+                prog[1].pop(index)
+            else: index += 1
+        elif prog[1][index][0] == "*" and prog[1][index + 1][0] == "/" or prog[1][index][0] == "/" and prog[1][index + 1][0] == "*":
+            if prog[1][index][1] != "x" and prog[1][index + 1][1] != "x":
+                prog[1][index][1] /= prog[1][index + 1][1]
+                prog[1].pop(index)
+            else: index += 1
+        else: index += 1
+    return prog
+
 # Terminate program
 def end(prog):
     print("y=" + printProg(prog))
+    accuracy = 0
     if fileCheck: 
-        if multi: print("Actual fitness: ", (fitness(prog, vals, fileCheck, vals2)))
-        else: print("Actual fitness: ", (fitness(prog, vals, fileCheck)))
-    else: print("Actual fitness: ", (fitness(prog, xVals, fileCheck)))
+        if multi: accuracy = (fitness(prog, vals, fileCheck, vals2))/goatFit
+        else: accuracy = (fitness(prog, vals, fileCheck))/goatFit
+    else: accuracy = (fitness(prog, xVals, fileCheck))/goatFit
+
+    if accuracy != 1: accuracy = abs(goatFit - accuracy)/goatFit
+    accuracy = str(accuracy * 100) + "%"
+
+    print("Accuracy: ", accuracy)
 
     gen = [i for i in range(len(bestFits))]
     yVals, yVals2 = [], []
@@ -234,6 +268,13 @@ def end(prog):
         plt.plot(xVals, yVals, color="red", alpha=0.5, label="Best program")
     plt.legend(loc='best')
     plt.show()
+    
+    if fileCheck and multi:
+        plt.plot(range(len(vals)), vals2, color="blue", alpha=0.5, label="Dataset")
+        plt.plot(range(len(vals) + 180), yVals2, color="red", alpha=0.5, label="Best program")
+        plt.annotate(minInd, xy=(minInd, yVals[minInd]), xytext=(minInd, yVals[minInd] * 1.1), arrowprops=dict(facecolor='black', shrink=0.05), horizontalalignment='right', verticalalignment='top')
+        plt.legend(loc='best')
+        plt.show()
     
     # Save individual as csv file to be loaded in the future
     saveCheck = input("Save best individual? (Yes/No): ").lower()
@@ -318,10 +359,10 @@ if equation != "":
     equation = []
     for op in load:
         op = op.split(",")
-        if op[1][:-1] == 'x': equation.append((op[0], op[1][:-1]))
-        else: equation.append((op[0], float(op[1][:-1])))
+        if op[1][:-1] == 'x': equation.append([op[0], op[1][:-1]])
+        else: equation.append([op[0], float(op[1][:-1])])
     load.close()
-    equation = (norm1, equation)
+    equation = [norm1, equation]
     
 population = []
 bestFits = []
@@ -333,26 +374,27 @@ goatFit = 10000000
 # Populate initial generation
 if len(equation) > 0: 
     # Delta of loaded individual
-    for _ in range(popSize): population.append(mutate(equation))
+    for _ in range(popSize): population.append(checkAdjacent(mutate(equation)))
 else: 
     # Random individuals
-    for _ in range(popSize): population.append(randProg())
+    for _ in range(popSize): population.append(checkAdjacent(randProg()))
 
 prevFit = 0
+if fileCheck: 
+    tests = vals[:(len(vals) * 4)//5] # Reserve 90% of dataset as training data\
+    if multi:
+        tests2 = vals2[:(len(vals) * 4)//5]
+else: tests = random.choices(xVals, k=1000)
+
 for i in range(genNum):
     fitnesses = []
     bestProgs = []
     heapify(bestProgs)
-    if fileCheck: 
-        tests = vals[:(len(vals) * 4)//5] # Reserve 90% of dataset as training data\
-        if multi:
-            tests2 = vals2[:(len(vals) * 4)//5]
-    else: tests = random.choices(xVals, k=1000)
     print("Generation", i + 1, ":", end=" ")
     sumFitness, bestFit = 0, 1000000
     for index, prog in enumerate(population):
         fit = fitness(prog, tests, fileCheck, tests2)
-        if fit == 0 or mutChance > 90:
+        if fit == 0 or mutChance == 100:
             if fileCheck: 
                 if fitness(prog, vals, fileCheck) == 0: 
                     print("Perfect solution found: ", end="")
@@ -370,7 +412,7 @@ for i in range(genNum):
         
         # Reserving best programs for elitism
         if split > 0:
-            if len(bestProgs) > split:
+            if len(bestProgs) >= split:
                 temp = bestProgs[0]
                 if -temp[0] > fit: 
                     heappush(bestProgs, (-fit, index))
@@ -398,7 +440,7 @@ for i in range(genNum):
     newProg1, newProg2 = [], []
     count = 0
     while count < popSize - split:
-        if random.choice([True, False]): # Equal chance between reproduction or delta
+        if random.choice([True, False]) and count != popSize - split - 1: # Equal chance between reproduction or delta
             newProg1, newProg2 = xover(choose(population, fitnesses, sumFitness), choose(population, fitnesses, sumFitness))
             newProg1 = mutate(newProg1)
             newProg2 = mutate(newProg2)
@@ -414,5 +456,6 @@ for i in range(genNum):
             newPop.append(population[heappop(bestProgs)[1]]) # Elitism
         except:
             newPop.append(newPop[-1])
+        count += 1
     population = newPop
 end(goat)
