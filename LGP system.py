@@ -16,7 +16,7 @@ numRange = 10000
 xVals = [i/1000 for i in range(-6284, 6284)]
 vals, vals2 = [], []
 mutChance = 20
-crossChance = 50
+crossChance = 80
 popSize = 200
 genNum = 100
 indSize = 100
@@ -94,16 +94,16 @@ def fitness(prog, dataset, fileCheck, dataset2 = []):
         total2 = 0
         for i, x in enumerate(dataset2):
             buffer = interpret(prog, i, 1)
-            if buffer < 0: total += 1000000 
+            if buffer < 0: total2 += 1000000 
             else: total2 += (buffer - x)**2
         total2 += len(prog)
         
         xCount = 0
         for op in prog[1]:
             if op[0] in ['+', '-', '*', '/'] and op[1] == 'x': xCount += 1
-        if xCount == 0: total += 1000000
+        if xCount == 0: total2 += 1000000
         else: total2 += 1/xCount # Minor bias towards functions that utilize more X's
-        total2 = round(sqrt(total/indSize), 6)
+        total2 = round(sqrt(total2/indSize), 6)
         
         total = min(total, total2)
     
@@ -325,9 +325,6 @@ if equation != "":
     
 population = []
 bestFits = []
-averageFits = []
-bestProgs = []
-heapify(bestProgs)
 tests, tests2 = [], []
 goats = []
 goat = []
@@ -344,26 +341,32 @@ else:
 prevFit = 0
 for i in range(genNum):
     fitnesses = []
+    bestProgs = []
+    heapify(bestProgs)
     if fileCheck: 
-        tests = vals[:(len(vals) * 9)//10] # Reserve 90% of dataset as training data\
+        tests = vals[:(len(vals) * 4)//5] # Reserve 90% of dataset as training data\
         if multi:
-            tests2 = vals2[:(len(vals) * 9)//10]
+            tests2 = vals2[:(len(vals) * 4)//5]
     else: tests = random.choices(xVals, k=1000)
     print("Generation", i + 1, ":", end=" ")
-    sumFitness, bestFit, minFit = 0, 1000000, 1000000
+    sumFitness, bestFit = 0, 1000000
     for index, prog in enumerate(population):
         fit = fitness(prog, tests, fileCheck, tests2)
         if fit == 0 or mutChance > 90:
             if fileCheck: 
-                if fitness(prog, vals, fileCheck) == 0:
+                if fitness(prog, vals, fileCheck) == 0: 
                     print("Perfect solution found: ", end="")
                     end(prog)
-                else: fit = 1
+                else: 
+                    print("Prolonged stagnation detected")
+                    end(goat)
             else:
-                if fitness(prog, xVals, fileCheck) == 0:
+                if fitness(prog, xVals, fileCheck) == 0: 
                     print("Perfect solution found: ", end="")
                     end(prog)
-                else: fit = 1
+                else: 
+                    print("Prolonged stagnation detected")
+                    end(goat)
         
         # Reserving best programs for elitism
         if split > 0:
@@ -375,14 +378,14 @@ for i in range(genNum):
             else: heappush(bestProgs, (-fit, index))
         
         fitnesses.append(fit)
-        sumFitness += fitnesses[-1]
+        sumFitness += fit
         bestFit = min(bestFit, fitnesses[-1])
         if bestFit < goatFit:
             goatFit = bestFit
             goat = prog
-    averageFits.append(sumFitness/popSize)
+    averageFit = (sumFitness/popSize)
     print("Best fitness:", bestFit, end=", ")
-    print("Average fitness:", averageFits[-1], end=", ")
+    print("Average fitness:", averageFit, end=", ")
     print("Mutation chance:", str(mutChance) + "%")
     if prevFit == bestFit and mutChance < 100: mutChance += 1
     else: mutChance = minMutChance
@@ -390,7 +393,7 @@ for i in range(genNum):
     bestFits.append(bestFit)
     goats.append(goat)
     print("Best program: ", end = "")
-    print("y=" + printProg(goats[-1]))
+    print("y=" + printProg(goat))
     newPop = []
     newProg1, newProg2 = [], []
     count = 0
@@ -406,7 +409,7 @@ for i in range(genNum):
             newProg1 = mutate(choose(population, fitnesses, sumFitness))
             newPop.append(newProg1)
             count += 1
-    for _ in range(split): 
+    while len(bestProgs) > 0: 
         try:
             newPop.append(population[heappop(bestProgs)[1]]) # Elitism
         except:
