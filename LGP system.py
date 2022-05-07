@@ -186,7 +186,7 @@ def checkAdjacent(prog):
                 prog[1].pop(index)
             else: index += 1
         elif prog[1][index][0] == "*" and prog[1][index + 1][0] == "/" or prog[1][index][0] == "/" and prog[1][index + 1][0] == "*":
-            if prog[1][index][1] != "x" and prog[1][index + 1][1] != "x":
+            if prog[1][index][1] != "x" and prog[1][index + 1][1] != "x" and prog[1][index + 1][1] != 0:
                 prog[1][index][1] /= prog[1][index + 1][1]
                 prog[1].pop(index)
             else: index += 1
